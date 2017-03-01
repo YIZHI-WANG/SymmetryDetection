@@ -20,6 +20,7 @@
 #include <igl/find.h>
 #include <igl/matlab/matlabinterface.h>
 #include <igl/matlab/MatlabWorkspace.h>
+#include <igl/jet.h>
 #include <Eigen/Geometry>
 #include <algorithm>
 #include <iostream>
@@ -29,13 +30,16 @@ using namespace Eigen;
 using namespace std;
 
 void RotateMatrix2EularAngle(const MatrixXd Rot, VectorXd& Eular);
-void prune_umbilic_points(const VectorXd& SV, const VectorXi& V_Index_Sample, VectorXi& V_Index_Prune, VectorXi& V_Index_Dic, double prune_threshold);
-void compute_signature(const VectorXd& PV1, const VectorXd& PV2, VectorXd& SV);
+void prune_umbilic_points(const MatrixXd& SV, const VectorXi& V_Index_Sample, VectorXi& V_Index_Prune, VectorXi& V_Index_Dic, double prune_threshold);
+void compute_signature(const VectorXd& PV1, const VectorXd& PV2, MatrixXd& SV);
 void samping(int size, double Sample_Rate, VectorXi& V_Index_Sample);
-void search_pair(const VectorXi& V_Index_Dic, const VectorXi& V_Index_Prune, const VectorXi& V_Index_Sorted, const VectorXd& SV, const VectorXd& SV_Sorted, double pair_threshold, MatrixXi& Pair_Index);
+void sort_by_signature(const MatrixXd& SV, VectorXd& SV_Sorted_7d, VectorXd& SV_Sorted_PV1, VectorXd& SV_Sorted_PV2, VectorXi& V_Index_Sorted_7d, VectorXi& V_Index_Sorted_PV1, VectorXi& V_Index_Sorted_PV2);
+void find_similar(const VectorXi& V_Index_Prune, const VectorXd& SV_col, const VectorXd& SV_Sorted, double pair_threshold, VectorXi& floor_index, VectorXi& celling_index);
+void search_pair(int dimension, const VectorXi& V_Index_Dic, const VectorXi& V_Index_Prune, const VectorXi& V_Index_Sorted_7d, const VectorXi& V_Index_Sorted_PV1, const VectorXi& V_Index_Sorted_PV2, const MatrixXd& SV, const VectorXd& SV_Sorted_7d, const VectorXd& SV_Sorted_PV1, const VectorXd& SV_Sorted_PV2, double pair_threshold, MatrixXi& Pair_Index);
 void compute_local_frame(const MatrixXd& PD1, const MatrixXd& PD2, MatrixXd& LN);
 void compute_transformation(const MatrixXi Pair_Index, const MatrixXd V, const VectorXd& PV1, const VectorXd& PV2, const MatrixXd& PD1, const MatrixXd& PD2, const MatrixXd& LN, const int dimension, MatrixXd& Transformation);
-int MeanShift_Cluster(const MatrixXd& dataPts, double bandwidth, MatrixXd& clusterCenter, MatrixXi& data2cluster, MatrixXi& cluster2dataCell);
+int MeanShift_Cluster(const MatrixXd& dataPts, double bandwidth, MatrixXd& clusterCenter, MatrixXd& data2cluster, MatrixXd& cluster2data);
+void Extract_Vertex(const MatrixXd& cluster2data, const MatrixXi& Pair_Index, int which_cluster, VectorXi& V_in_Cluster);
 
 int main(int argc, char *argv[])
 {
@@ -49,19 +53,19 @@ int main(int argc, char *argv[])
 
 	MatrixXd PD1, PD2, LN;
 	VectorXd PV1, PV2;
-	VectorXd SV, SV_Sorted;
+	MatrixXd SV;
+	VectorXd SV_Sorted_PV1, SV_Sorted_PV2, SV_Sorted_7d;
 
-	VectorXi V_Index_Sample, V_Index_Dic, V_Index_Prune, V_Index_Sorted;
+	VectorXi V_Index_Sample, V_Index_Dic, V_Index_Prune, V_Index_Sorted_7d, V_Index_Sorted_PV1, V_Index_Sorted_PV2;
 	MatrixXi Pair_Index;
 
 	MatrixXd Transformation;
 
 	int clusterNum;
-	MatrixXd clusterCenter;
-	MatrixXi data2cluster, cluster2dataCell;
+	MatrixXd clusterCenter, data2cluster, cluster2data;
 
 	// Load a mesh in OFF format
-	readOBJ(SYMDETEC_SHARED_PATH "/bunny.OBJ", V, F);
+	readOBJ(SYMDETEC_SHARED_PATH "/plane (2).OBJ", V, F);
 	cout << "READ OBJ FINISH!" << endl << endl;
 
 	cout << "Model information:" << endl;
@@ -80,7 +84,7 @@ int main(int argc, char *argv[])
 	cout << "COMPUTE LOCAL FRAME FINISH!" << endl << endl;
 
 	//Sampling
-	samping(V.rows(), 0.2, V_Index_Sample);
+	samping(V.rows(), 0.5, V_Index_Sample);
 	cout << "SAMPLE FINISH!" << endl;
 	cout << "After Sampling, Vertex: " << V_Index_Sample.rows() << endl << endl;
 
@@ -89,14 +93,16 @@ int main(int argc, char *argv[])
 	cout << "PRUNE FINISH!" << endl;
 	cout << "After Pruning, Vertex: " << V_Index_Prune.rows() << endl << endl;
 
-	sortrows(SV, true, SV_Sorted, V_Index_Sorted);
+	//Sort Siganature
+	sort_by_signature(SV, SV_Sorted_7d, SV_Sorted_PV1, SV_Sorted_PV2, V_Index_Sorted_7d, V_Index_Sorted_PV1, V_Index_Sorted_PV2);
+	cout << "SORT FINISH!" << endl << endl;
 	//for (int i = 0; i < SV.rows(); i++)
 	//{
-	//	cout << SV_Sorted(i) <<" , " << SV(V_Index_Sorted(i)) << endl;
+	//	cout << SV_Sorted_7d(i) <<" , " << SV(V_Index_Sorted_7d(i)) << endl;
 	//}
 
 	//Pairing
-	search_pair(V_Index_Dic, V_Index_Prune, V_Index_Sorted, SV, SV_Sorted, pair_threshold, Pair_Index);
+	search_pair(dimension, V_Index_Dic, V_Index_Prune, V_Index_Sorted_7d, V_Index_Sorted_PV1, V_Index_Sorted_PV2, SV, SV_Sorted_7d, SV_Sorted_PV1, SV_Sorted_PV2, pair_threshold, Pair_Index);
 	cout << "PAIR FINISH!" << endl;
 	cout << "After Pairing, Pair: " << Pair_Index.rows() << endl << endl;
 
@@ -105,7 +111,7 @@ int main(int argc, char *argv[])
 	cout << "COMPUTE TRANSFORMATION FINISH!" << endl << endl;
 
 	//Mean-Shift
-	clusterNum = MeanShift_Cluster(Transformation, bandwidth, clusterCenter, data2cluster, cluster2dataCell);
+	clusterNum = MeanShift_Cluster(Transformation, bandwidth, clusterCenter, data2cluster, cluster2data);
 	//data2cluster.transposeInPlace();
 	cout << "MEAN-SHIFT FINISH!" << endl;
 	cout << "After MEAN-SHIFT, cluster center number: " << clusterNum << endl;
@@ -118,18 +124,43 @@ int main(int argc, char *argv[])
 	//	}
 	//	cout << endl;
 	//}
-
+	//cout << cluster2data.rows() << "," << cluster2data.cols() << endl;
 	//for (int i = 0; i < data2cluster.rows(); i++)
 	//{
 	//	cout << "point " << i << " ---> " << data2cluster(i,0) << endl;
 	//}
 	cout << endl;
 
-
 	//// Init the viewer
-	//viewer::Viewer viewer;
+	viewer::Viewer viewer;
+
+	VectorXi seed;
+	MatrixXd C;
+	seed.resize(clusterNum);
+	for (int i = 0; i < clusterNum; i++)
+	{
+		seed(i) = i;
+	}
+	jet(seed, true, C);
+
+	for (int i = 0; i < clusterNum; i++)
+	{
+		VectorXi vertex_in_cluster;
+		Extract_Vertex(cluster2data, Pair_Index, i, vertex_in_cluster);
+		int num = vertex_in_cluster.rows();
+		MatrixXd V_in_Cluster;
+		V_in_Cluster.resize(num, 3);
+		for (int j = 0; j < num; j++)
+		{
+			V_in_Cluster.row(j) = V.row(vertex_in_cluster(j));
+		}
+		viewer.data.add_points(V_in_Cluster, C.row(i));
+	}
+	
 	//// Plot the mesh
-	//viewer.data.set_mesh(V, F);
+	viewer.data.set_mesh(V, F);
+
+	viewer.launch();
 	//
 	//// Average edge length for sizing
 	//const double avg = avg_edge_length(V, F);
@@ -144,7 +175,7 @@ int main(int argc, char *argv[])
 	//// Hide wireframe
 	//viewer.core.show_lines = false;
 	//
-	//viewer.launch();
+
 }
 
 void prune_umbilic_points(const MatrixXd& V, const MatrixXd& PD1, const MatrixXd& PD2, const VectorXd& PV1, const VectorXd& PV2, VectorXi& V_Index_Prune, double prune_threshold)
@@ -173,7 +204,7 @@ void prune_umbilic_points(const MatrixXd& V, const MatrixXd& PD1, const MatrixXd
 	V_Index_Prune = _V_Index_Prune.head(size_P);
 }
 
-void prune_umbilic_points(const VectorXd& SV, const VectorXi& V_Index_Sample, VectorXi& V_Index_Prune, VectorXi& V_Index_Dic, double prune_threshold)
+void prune_umbilic_points(const MatrixXd& SV, const VectorXi& V_Index_Sample, VectorXi& V_Index_Prune, VectorXi& V_Index_Dic, double prune_threshold)
 {
 	VectorXi _V_Index_Prune;
 	int size = SV.rows();
@@ -186,7 +217,7 @@ void prune_umbilic_points(const VectorXd& SV, const VectorXi& V_Index_Sample, Ve
 	for (int i = 0; i < size_Sample; i++)
 	{
 		//cout << i << "SV = " << SV(i) << endl;
-		if (fabs(SV(V_Index_Sample(i))) < prune_threshold)
+		if (fabs(SV(V_Index_Sample(i),0)) < prune_threshold)
 		{
 			V_Index_Dic(V_Index_Sample(i)) = size_P;
 			_V_Index_Prune(size_P++) = V_Index_Sample(i);
@@ -197,24 +228,26 @@ void prune_umbilic_points(const VectorXd& SV, const VectorXi& V_Index_Sample, Ve
 	V_Index_Prune = _V_Index_Prune.head(size_P);
 }
 
-void compute_signature(const VectorXd& PV1, const VectorXd& PV2, VectorXd& SV)
+void compute_signature(const VectorXd& PV1, const VectorXd& PV2, MatrixXd& SV)
 {
 	int size = PV1.rows();
-	SV.resizeLike(PV1);
+	SV.resize(size, 3);
 
 	for (int i = 0; i < size; i++)
 	{
 		if(PV2(i) == 0.0)
 		{
-			SV(i) = (PV1(i) > 0.0) ? (-INF) : (INF);
+			SV(i,0) = (PV1(i) > 0.0) ? (-INF) : (INF);
 		}
 		else
 		{
-			SV(i) = PV1(i) / PV2(i);
+			SV(i,0) = PV1(i) / PV2(i);
 		}
-
 		//cout << "SV" << i << " = " << SV(i) << endl;
 	}
+
+	SV.col(1) = PV1;
+	SV.col(2) = PV2;
 
 }
 
@@ -234,19 +267,27 @@ void samping(int size, double Sample_Rate, VectorXi& V_Index_Sample)
 
 }
 
-void search_pair(const VectorXi& V_Index_Dic, const VectorXi& V_Index_Prune, const VectorXi& V_Index_Sorted, const VectorXd& SV, const VectorXd& SV_Sorted, double pair_threshold, MatrixXi& Pair_Index)
+void sort_by_signature(const MatrixXd& SV, VectorXd& SV_Sorted_7d, VectorXd& SV_Sorted_PV1, VectorXd& SV_Sorted_PV2, VectorXi& V_Index_Sorted_7d, VectorXi& V_Index_Sorted_PV1, VectorXi& V_Index_Sorted_PV2)
 {
-	int point_size = SV.rows();
+	VectorXd SV_7d = SV.col(0);
+	VectorXd SV_PV1 = SV.col(1);
+	VectorXd SV_PV2 = SV.col(2);
+	sortrows(SV_7d, true, SV_Sorted_7d, V_Index_Sorted_7d);
+	sortrows(SV_PV1, true, SV_Sorted_PV1, V_Index_Sorted_PV1);
+	sortrows(SV_PV2, true, SV_Sorted_PV2, V_Index_Sorted_PV2);
+}
+
+void find_similar(const VectorXi& V_Index_Prune, const VectorXd& SV_col, const VectorXd& SV_Sorted, double pair_threshold, VectorXi& floor_index, VectorXi& celling_index)
+{
 	int pruned_point_size = V_Index_Prune.rows();
-	int max_size = pruned_point_size * (pruned_point_size - 1) / 2;
-	int pair_size = 0;
-
-	MatrixXi _Pair_Index(max_size, 2);
-
+	int point_size = SV_col.rows();
+	floor_index.resizeLike(V_Index_Prune);
+	celling_index.resizeLike(V_Index_Prune);
 	for (int i = 0; i < pruned_point_size; i++)
 	{
-		double _sv = SV(V_Index_Prune(i));
-		//cout << "sv = " << _sv << endl;
+		floor_index(i) = -1;
+		celling_index(i) = -1;
+		double _sv = SV_col(V_Index_Prune(i));
 		double _sv_floor, _sv_celling;
 		if (_sv > 0)
 		{
@@ -259,14 +300,11 @@ void search_pair(const VectorXi& V_Index_Dic, const VectorXi& V_Index_Prune, con
 			_sv_celling = _sv * (1 - pair_threshold);
 		}
 
-		//cout << "floor = " << _sv_floor << " celling = " << _sv_celling << endl;
-		int floor_index = -1, celling_index = -1;
 		for (int p = 0; p < point_size; p++) {
 			double _sv_current = SV_Sorted(p);
 			if (_sv_current >= _sv_floor)
 			{
-				//cout << "find floor = " << _sv_current << endl;
-				floor_index = p;
+				floor_index(i) = p;
 				break;
 			}
 		}
@@ -274,24 +312,94 @@ void search_pair(const VectorXi& V_Index_Dic, const VectorXi& V_Index_Prune, con
 			double _sv_current = SV_Sorted(q);
 			if (_sv_current <= _sv_celling)
 			{
-				//cout << "find celling = " << _sv_current << endl;
-				celling_index = q;
+				celling_index(i) = q;
 				break;
 			}
 		}
-		//cout << floor_index << " , " << celling_index << endl;
-		for (int k = floor_index; k < celling_index; k++)
+	}
+}
+
+void search_pair(int dimension, const VectorXi& V_Index_Dic, const VectorXi& V_Index_Prune, const VectorXi& V_Index_Sorted_7d, const VectorXi& V_Index_Sorted_PV1, const VectorXi& V_Index_Sorted_PV2, const MatrixXd& SV, const VectorXd& SV_Sorted_7d, const VectorXd& SV_Sorted_PV1, const VectorXd& SV_Sorted_PV2, double pair_threshold, MatrixXi& Pair_Index)
+{
+	int point_size = SV.rows();
+	int pruned_point_size = V_Index_Prune.rows();
+	int max_size = pruned_point_size * (pruned_point_size - 1) / 2;
+	int pair_size = 0;
+
+	MatrixXi _Pair_Index(max_size, 2);
+
+	if (dimension == 7)
+	{
+		VectorXi floor_index, celling_index;
+		find_similar(V_Index_Prune, SV.col(0), SV_Sorted_7d, pair_threshold, floor_index, celling_index);
+		for (int i = 0; i < pruned_point_size; i++)
 		{
-			//cout << "SV" << V_Index_Prune(i) << " = " << SV(V_Index_Prune(i)) << endl;
-			//cout << "SV" << V_Index_Sorted(k) << " = " << SV(V_Index_Sorted(k)) << endl;
-			//cout << "DIC" << V_Index_Sorted(k) << " = " << V_Index_Dic(V_Index_Sorted(k)) << endl;
-			if (V_Index_Dic(V_Index_Sorted(k)) != -1)
+			/*double _sv = SV(V_Index_Prune(i), 0);
+			double _sv_floor, _sv_celling;
+			if (_sv > 0)
 			{
-				//cout << "add pair" << V_Index_Prune(i) << " , " << V_Index_Sorted(k) << endl;
-				_Pair_Index.row(pair_size++) << V_Index_Prune(i), V_Index_Sorted(k);
+				_sv_floor = _sv * (1 - pair_threshold);
+				_sv_celling = _sv * (1 + pair_threshold);
+			}
+			else
+			{
+				_sv_floor = _sv * (1 + pair_threshold);
+				_sv_celling = _sv * (1 - pair_threshold);
+			}
+
+			int floor_index = -1, celling_index = -1;
+			for (int p = 0; p < point_size; p++) {
+				double _sv_current = SV_Sorted_7d(p);
+				if (_sv_current >= _sv_floor)
+				{
+					floor_index = p;
+					break;
+				}
+			}
+			for (int q = point_size - 1; q >= 0; q--) {
+				double _sv_current = SV_Sorted_7d(q);
+				if (_sv_current <= _sv_celling)
+				{
+					celling_index = q;
+					break;
+				}
+			}*/
+			for (int k = floor_index(i); k <= celling_index(i); k++)
+			{
+				if (V_Index_Dic(V_Index_Sorted_7d(k)) != -1 && V_Index_Sorted_7d(k) != V_Index_Prune(i))
+				{
+					_Pair_Index.row(pair_size++) << V_Index_Prune(i), V_Index_Sorted_7d(k);
+				}
 			}
 		}
 	}
+	else if (dimension == 6)
+	{
+		VectorXi floor_index_PV1, floor_index_PV2, celling_index_PV1, celling_index_PV2;
+		find_similar(V_Index_Prune, SV.col(1), SV_Sorted_PV1, pair_threshold, floor_index_PV1, celling_index_PV1);
+		find_similar(V_Index_Prune, SV.col(2), SV_Sorted_PV2, pair_threshold, floor_index_PV2, celling_index_PV2);
+		for (int i = 0; i < pruned_point_size; i++)
+		{	
+			for (int m = floor_index_PV1(i); m <= celling_index_PV1(i); m++)
+			{
+				int V_Index_Sorted_PV1_ = V_Index_Sorted_PV1(m);
+				for (int n = floor_index_PV2(i); n <= celling_index_PV2(i); n++)
+				{
+					int V_Index_Sorted_PV2_ = V_Index_Sorted_PV2(n);
+					if (V_Index_Sorted_PV1_ == V_Index_Sorted_PV2_)
+					{
+						if (V_Index_Dic(V_Index_Sorted_PV1_) != -1 && V_Index_Sorted_PV1_ != V_Index_Prune(i))
+						{
+							//cout << SV(V_Index_Prune(i), 1) << "," << SV(V_Index_Prune(i), 2) << " and "<<SV(V_Index_Sorted_PV1_, 1) << "," << SV(V_Index_Sorted_PV1_, 2) << endl;
+							_Pair_Index.row(pair_size++) << V_Index_Prune(i), V_Index_Sorted_PV1_;
+						}
+						break;
+					}
+				}
+			}
+		}
+	}
+	
 	//cout << "pair_size = " << pair_size << endl;
 	Pair_Index = _Pair_Index.block(0, 0, pair_size, 2);
 }
@@ -392,48 +500,10 @@ void RotateMatrix2EularAngle(const MatrixXd Rot, VectorXd& Eular)
 	Eular << Rx, Ry, Rz;
 }
 
-int MeanShift_Cluster(const MatrixXd& dataPts, double bandwidth, MatrixXd& clusterCenter, MatrixXi& data2cluster, MatrixXi& cluster2dataCell)
-//void MeanShift_Cluster()
+int MeanShift_Cluster(const MatrixXd& dataPts, double bandwidth, MatrixXd& clusterCenter, MatrixXd& data2cluster, MatrixXd& cluster2data)
 {
-//	int numDim = dataPts.cols();
-//	int numPts = dataPts.rows();
-//	int numCluster = 0;
-//	int numInitPts = numPts;
-//	double bandSq = bandwidth * bandwidth;
-//	double stopThreshold = 1e-3 * bandwidth;
-//	VectorXi visitedFlag, clusterVotes, initPtIndex;
-//	visitedFlag.setZero(numPts);
-//	clusterVotes.setZero(numPts);
-//	initPtIndex.resize(numPts);
-//	for (int i = 0; i < numPts; i++)
-//	{
-//		initPtIndex(i) = i;
-//	}
-//
-//	while (numInitPts)
-//	{
-//		int randomSeedIndex = ceil((numInitPts - 1e-6) * rand());
-//		int startIndex = initPtIndex(randomSeedIndex);
-//		VectorXd myMean = dataPts.row(startIndex);
-//		VectorXi myMembers, thisClusterVotes;
-//		myMembers.resize(numPts);
-//		thisClusterVotes.setZero(numPts);
-//
-//		while (1)
-//		{
-//			VectorXd sqDistToAll; //dist squared from mean to all points still active
-//			VectorXd inInds = find(sqDistToAll < bandSq); //points within bandWidth
-//		
-//		}
-//
-//	}
 	// Matlab instance
 	Engine* engine;
-	//igl::MatlabWorkspace mw;
-	//mw.save(V, "V");
-	//mw.save_index(F, "F");
-	//mw.save(L, "L");
-	//mw.write("fertility.mat");
 
 	// Launch MATLAB
 	matlab::mlinit(&engine);
@@ -443,25 +513,51 @@ int MeanShift_Cluster(const MatrixXd& dataPts, double bandwidth, MatrixXd& clust
 	matlab::mlsetmatrix(&engine, "dataPts", dataPts_);
 
 	// Send bandwidth to matlab
-	matlab::mlsetscalar(&engine, "bandwidth", bandwidth);
+	//matlab::mlsetscalar(&engine, "bandwidth", bandwidth);
 
 	//Cluster using matlab
-	igl::matlab::mleval(&engine, "[data2cluster,cluster2dataCell,clustCent,numClust] = MeanShiftCluster(dataPts,bandwidth)");
+	igl::matlab::mleval(&engine, "[clustCent,data2cluster,cluster2data,numClust] = MeanShiftCluster(dataPts)");
 	
 	// Get clustering
 	matlab::mlgetmatrix(&engine, "clustCent", clusterCenter);
 	matlab::mlgetmatrix(&engine, "data2cluster", data2cluster);
-	matlab::mlgetmatrix(&engine, "cluster2dataCell", cluster2dataCell);
-	
-	int numClust = -1;
-	numClust = (int)matlab::mlgetscalar(&engine, "numClust");
+	matlab::mlgetmatrix(&engine, "cluster2data", cluster2data);
+	int numClust = (int)matlab::mlgetscalar(&engine, "numClust");
+
 	//cout << "matlab" << matlab::mleval(&engine, "size(clustCent)") << endl;
 	//cout << "matlab" << matlab::mleval(&engine, "size(data2cluster)") << endl;
-	//cout << "matlab" << matlab::mleval(&engine, "size(cluster2dataCell)") << endl;
+	//cout << "matlab" << matlab::mleval(&engine, "cluster2data(1,:)") << endl;
 	//cout << data2cluster.rows() << " , " << data2cluster.cols() << endl;
+	//cout << "Recieve:" << endl;
+	//for (int i = 0; i < cluster2data.cols(); i++)
+	//{
+	//	cout << cluster2data(0, i) << " ";
+	//}
+	//cout << endl;
+	//cout << cluster2data.rows() << " , " << cluster2data.cols() << endl;
 
-	//cout << cluster2dataCell.rows() << " , " << cluster2dataCell.cols() << endl;
-	clusterCenter.transposeInPlace();
-	data2cluster.transposeInPlace();
 	return numClust;
+}
+
+void Extract_Vertex(const MatrixXd& cluster2data, const MatrixXi& Pair_Index, int which_cluster, VectorXi& V_in_Cluster)
+{
+	VectorXi Pair_cluster;
+	Pair_cluster.resize(cluster2data.cols());
+	int num = 0;
+	for (int i = 0; i < cluster2data.cols(); i++)
+	{
+		if (cluster2data(which_cluster, i) >= 0)
+		{
+			Pair_cluster(i) = cluster2data(which_cluster, i);
+			num++;
+		}
+	}
+
+	V_in_Cluster.resize(num * 2);
+	for (int i = 0; i < num; i++)
+	{
+		//TODO CHECK REPEAT VERTEX
+		V_in_Cluster(i * 2) = Pair_Index(Pair_cluster(i), 0);
+		V_in_Cluster(i * 2 + 1) = Pair_Index(Pair_cluster(i), 1);
+	}
 }
