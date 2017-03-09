@@ -1,19 +1,6 @@
-function [clustCent,data2cluster,cluster2dataMat,numClust,cluster2dataCell] = MeanShiftCluster(dataPts,mode)
-%perform MeanShift Clustering of data using a flat kernel
-%
-% ---INPUT---
-% dataPts           - input data, (numDim x numPts)
-% bandWidth         - is bandwidth parameter (scalar)
-% plotFlag          - display output if 2 or 3 D    (logical)
-% ---OUTPUT---
-% clustCent         - is locations of cluster centers (numDim x numClust)
-% data2cluster      - for every data point which cluster it belongs to (numPts)
-% cluster2dataCell  - for every cluster which points are in it (numClust)
-% 
-% Bryan Feldman 02/24/06
-% MeanShift first appears in
-% K. Funkunaga and L.D. Hosteler, "The Estimation of the Gradient of a
-% Density Function, with Applications in Pattern Recognition"
+function [clustCent,data2cluster,cluster2dataMat,numClust,cluster2dataCell] = MeanShiftCluster(dataPts,mode,boxSize)
+
+
 
 
 %*** Check input ****
@@ -25,15 +12,16 @@ function [clustCent,data2cluster,cluster2dataMat,numClust,cluster2dataCell] = Me
 %     plotFlag = true;
 %     plotFlag = false;
 % end
-% if mode == 1
+tic
+if mode == 1
     d_max = max(dataPts',[],1);
     d_min = min(dataPts',[],1);
     L = d_max - d_min;
-    bandWidth = max(L)/5;
-% else
-%     bandWidth = 0.75;
-% end
-% save('C:\\Users\\WYZ95\\desktop\\test.mat','dataPts')
+    bandWidth = max(L)/30;
+else
+    bandWidth = 0.75;
+end
+% save('C:\\Users\\WYZ95\\desktop\\test_cow.mat','dataPts')
 plotFlag = false;
 
 %**** Initialize stuff ***
@@ -54,7 +42,7 @@ clusterVotes    = zeros(1,numPts,'uint16');             %used to resolve conflic
 % set these weights so that a rotation by 180 degrees corresponds to a
 % displacement of half the bounding box diagonal
 Beta1 = 10;
-Beta2 = sizeSpace / 2;
+Beta2 = (boxSize / 2 / pi) ^ 2;
 Beta3 = 1;
 
 while numInitPts
@@ -78,8 +66,8 @@ while numInitPts
         
         myOldMean   = myMean;                                   %save the old mean
         
-        kernel_value = EpanechnikovKernel(numDim, sqDistToAll./(bandWidth^2));
-        numerator  = sum(dataPts * kernel_value' , 2);
+        kernel_value = EpanechnikovKernel(numDim, size(inInds,2), sqDistToAll(inInds)./bandSq);
+        numerator  = sum(dataPts(:,inInds) * kernel_value' , 2);
         denominator = sum(kernel_value , 2);
         myMean = numerator ./ denominator;
 %         myMean      = mean(dataPts(:,inInds),2);                %compute the new mean
@@ -163,6 +151,7 @@ else
         end
     end
 end
+toc
 
 
 

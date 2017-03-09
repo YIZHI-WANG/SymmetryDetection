@@ -22,7 +22,7 @@ for i = 1:nClust
 end
 
 tic
-[clustCent,point2cluster,~,~,clustMembsCell] = MeanShiftCluster(x,2);
+[clustCent,point2cluster,~,~,clustMembsCell] = MeanShiftCluster(x,2,0);
 toc
 
 numClust = length(clustMembsCell);
