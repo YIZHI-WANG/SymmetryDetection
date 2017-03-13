@@ -56,7 +56,7 @@ viewer::Viewer m_viewer;
 int main(int argc, char *argv[])
 {
 	double prune_threshold = 0.75;
-	double pair_threshold = 0.05;
+	double pair_threshold = 0.1;
 	int dimension = 6;
 
 	MatrixXd V;
@@ -77,12 +77,13 @@ int main(int argc, char *argv[])
 
 	// Load a mesh in OFF format
 	//readOBJ(SYMDETEC_SHARED_PATH "/bunny.OBJ", V, F);
-	//readOFF(SYMDETEC_SHARED_PATH "/cow.OFF", V, F);
+	readOFF(SYMDETEC_SHARED_PATH "/cow.OFF", V, F);
 	//readOFF(SYMDETEC_SHARED_PATH "/cheburashka.off", V, F);
 	//readOBJ(SYMDETEC_SHARED_PATH "/cheburashka_arm.OBJ", V, F);
 	//readOFF(SYMDETEC_SHARED_PATH "/decimated-knight.off", V, F);
-	readOBJ(SYMDETEC_SHARED_PATH "/dummy.OBJ", V, F);
+	//readOBJ(SYMDETEC_SHARED_PATH "/dummy.OBJ", V, F);
 	//readOBJ(SYMDETEC_SHARED_PATH "/chair_005.OBJ", V, F);
+
 	cout << "READ OBJ FINISH!" << endl << endl;
 
 	cout << "Model information:" << endl;
@@ -101,7 +102,7 @@ int main(int argc, char *argv[])
 	cout << "COMPUTE LOCAL FRAME FINISH!" << endl << endl;
 
 	//Sampling
-	samping(V.rows(), 0.1, V_Index_Sample);
+	samping(V.rows(), 1, V_Index_Sample);
 	cout << "SAMPLE FINISH!" << endl;
 	cout << "After Sampling, Vertex: " << V_Index_Sample.rows() << endl << endl;
 
@@ -842,6 +843,11 @@ int MeanShift_Cluster(const MatrixXd& V, const MatrixXd& dataPts, MatrixXd& clus
 
 	// Launch MATLAB
 	matlab::mlinit(&engine);
+
+	if (engine == NULL)
+	{
+		cout << "Lunch Matlab Failed!" << endl;
+	}
 
 	// Send V matrix to matlab for bounding box size
 	MatrixXd V_ = V.transpose();

@@ -2,27 +2,39 @@
 
 clear
 profile on
+% 
+% nPtsPerClust = 2500;
+% nClust  = 3;
+% totalNumPts = nPtsPerClust*nClust;
+% m(:,1) = [1 1]';
+% m(:,2) = [-1 -1]';
+% m(:,3) = [1 -1]';
+% var = .6;
+% bandwidth = 0.15;
+% clustMed = [];
+% %clustCent;
+% 
+% 
+% x = var*randn(2,nPtsPerClust*nClust);
+% %*** build the point set
+% for i = 1:nClust
+%     x(:,1+(i-1)*nPtsPerClust:(i)*nPtsPerClust)       = x(:,1+(i-1)*nPtsPerClust:(i)*nPtsPerClust) + repmat(m(:,i),1,nPtsPerClust);   
+% end
 
-nPtsPerClust = 250;
-nClust  = 3;
-totalNumPts = nPtsPerClust*nClust;
-m(:,1) = [1 1]';
-m(:,2) = [-1 -1]';
-m(:,3) = [1 -1]';
-var = .6;
-bandwidth = 0.75;
-clustMed = [];
-%clustCent;
+load test_cow.mat;
+
+% testData(1,:) = sum(abs(dataPts(1:3,:)));
+% testData(2,:) = sum(abs(dataPts(4:6,:)));
+% 
+% testData(1,:) = testData(1,:)  ./ pi;
+% testData(2,:) = testData(2,:) ./ 1.271111;
 
 
-x = var*randn(2,nPtsPerClust*nClust);
-%*** build the point set
-for i = 1:nClust
-    x(:,1+(i-1)*nPtsPerClust:(i)*nPtsPerClust)       = x(:,1+(i-1)*nPtsPerClust:(i)*nPtsPerClust) + repmat(m(:,i),1,nPtsPerClust);   
-end
+testData(1,:) = dataPts(1,:)./ pi ;
+testData(2,:) = dataPts(4,:)./ 1.271111;
 
 tic
-[clustCent,point2cluster,~,~,clustMembsCell] = MeanShiftCluster(x,2,0);
+[clustCent,point2cluster,~,~,clustMembsCell] = MeanShiftClusterT(testData,2,0);
 toc
 
 numClust = length(clustMembsCell);
@@ -30,10 +42,10 @@ numClust = length(clustMembsCell);
 
 figure(10),clf,hold on
 cVec = 'bgrcmykbgrcmykbgrcmykbgrcmyk';%, cVec = [cVec cVec];
-for k = 1:min(numClust,length(cVec))
+for k = 1:numClust
     myMembers = clustMembsCell{k};
     myClustCen = clustCent(:,k);
-    plot(x(1,myMembers),x(2,myMembers),[cVec(k) '.'])
-    plot(myClustCen(1),myClustCen(2),'o','MarkerEdgeColor','k','MarkerFaceColor',cVec(k), 'MarkerSize',10)
+    plot(dataPts(1,myMembers),dataPts(4,myMembers),[cVec(mod(k,length(cVec)) + 1) '.'])
+    plot(myClustCen(1)  .*pi,myClustCen(2) .*1.271111 ,'o','MarkerEdgeColor','k','MarkerFaceColor',cVec(mod(k,length(cVec)) + 1), 'MarkerSize',10)
 end
 title(['no shifting, numClust:' int2str(numClust)])

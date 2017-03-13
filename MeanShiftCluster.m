@@ -1,4 +1,4 @@
-function [clustCent,data2cluster,cluster2dataMat,numClust,cluster2dataCell] = MeanShiftCluster(dataPts,mode,boxSize)
+function [clustCent,data2cluster,cluster2dataMat,numClust,clusterSize,cluster2dataCell] = MeanShiftClusterT(dataPts,mode,boxSize)
 
 
 
@@ -13,15 +13,20 @@ function [clustCent,data2cluster,cluster2dataMat,numClust,cluster2dataCell] = Me
 %     plotFlag = false;
 % end
 tic
+
+% save('C:\\Users\\WYZ95\\desktop\\test_cow_t.mat','dataPts')
+
 if mode == 1
+    dataPts(1:3,:) = dataPts(1:3,:)  ./ pi ./ 2;
+    dataPts(4:6,:) = dataPts(4:6,:)  ./ boxSize;
     d_max = max(dataPts',[],1);
     d_min = min(dataPts',[],1);
     L = d_max - d_min;
-    bandWidth = max(L)/30;
+    bandWidth = max(L)/20;
 else
-    bandWidth = 0.75;
+    bandWidth = 0.1;
 end
-% save('C:\\Users\\WYZ95\\desktop\\test_cow.mat','dataPts')
+
 plotFlag = false;
 
 %**** Initialize stuff ***
@@ -45,6 +50,22 @@ Beta1 = 10;
 Beta2 = (boxSize / 2 / pi) ^ 2;
 Beta3 = 1;
 
+myZeroMean          = zeros(numDim,1);                     % intilize mean to this points location                        
+metric = (repmat(myZeroMean,1,numPts) - dataPts).^2;
+%         sqDistToAll = sum(metric);    %dist squared from mean to all points still active
+% if mode == 1
+%     sqDistToAll = Beta2 .* sum(metric(1:3,:)) + Beta3 .* sum(metric(4:6,:));    %dist squared from mean to all points still active
+% else
+    sqDistToAll = sum(metric);    %dist squared from mean to all points still active
+% end
+zeroMembers      = find(sqDistToAll < bandSq);               %points within bandWidth
+beenVisitedFlag(zeroMembers) = 1;                         %mark that these points have been visited
+zeroClusterVotes    = zeros(1,numPts,'uint16');         % used to resolve conflicts on cluster membership
+zeroClusterVotes(zeroMembers) = zeroClusterVotes(zeroMembers)+1;  %add a vote for all the in points belonging to this cluster
+notZeroMembers = setdiff(1:numPts, zeroMembers);
+initPtInds = notZeroMembers;
+numInitPts = size(notZeroMembers,2);
+ 
 while numInitPts
 
     tempInd         = ceil( (numInitPts-1e-6)*rand);        % pick a random seed point
@@ -57,20 +78,22 @@ while numInitPts
         metric = (repmat(myMean,1,numPts) - dataPts).^2;
 %         sqDistToAll = sum(metric);    %dist squared from mean to all points still active
         if mode == 1
-            sqDistToAll = Beta2 .* sum(metric(1:3,:)) + Beta3 .* sum(metric(4:6,:));    %dist squared from mean to all points still active
+             sqDistToAll = sum(metric);    %dist squared from mean to all points still active
+%             sqDistToAll = Beta2 .* sum(metric(1:3,:)) + Beta3 .* sum(metric(4:6,:));    %dist squared from mean to all points still active
         else
             sqDistToAll = sum(metric);    %dist squared from mean to all points still active
         end
         inInds      = find(sqDistToAll < bandSq);               %points within bandWidth
+        inInds = setdiff(inInds, zeroMembers);
         thisClusterVotes(inInds) = thisClusterVotes(inInds)+1;  %add a vote for all the in points belonging to this cluster
         
         myOldMean   = myMean;                                   %save the old mean
         
-        kernel_value = EpanechnikovKernel(numDim, size(inInds,2), sqDistToAll(inInds)./bandSq);
-        numerator  = sum(dataPts(:,inInds) * kernel_value' , 2);
-        denominator = sum(kernel_value , 2);
-        myMean = numerator ./ denominator;
-%         myMean      = mean(dataPts(:,inInds),2);                %compute the new mean
+%         kernel_value = EpanechnikovKernel(numDim, size(inInds,2), sqDistToAll(inInds)./bandSq);
+%         numerator  = sum(dataPts(:,inInds) * kernel_value' , 2);
+%         denominator = sum(kernel_value , 2);
+%         myMean = numerator ./ denominator;
+        myMean      = mean(dataPts(:,inInds),2);                %compute the new mean
        
         myMembers   = [myMembers inInds];                       %add any point within bandWidth to the cluster
         beenVisitedFlag(myMembers) = 1;                         %mark that these points have been visited
@@ -83,6 +106,9 @@ while numInitPts
                 plot(dataPts(1,myMembers),dataPts(2,myMembers),'ys')
                 plot(myMean(1),myMean(2),'go')
                 plot(myOldMean(1),myOldMean(2),'rd')
+                movement = norm(myMean - myOldMean)
+                ratio = movement / bandWidth
+                plot([myOldMean(1) myMean(1)],[myOldMean(2) myMean(2)],'b-')
                 pause
             end
         end
@@ -123,6 +149,15 @@ while numInitPts
 
 end
 
+
+
+numClust                    = numClust+1;                   %increment clusters
+clustCent(:,numClust)       = myZeroMean;                       %record the mean  
+%clustMembsCell{numClust}    = myMembers;                    %store my members
+clusterVotes(numClust,:)    = inf *zeroClusterVotes ;
+
+                
+                
 clusterSize = zeros(numClust,1);
 [~,data2cluster] = max(clusterVotes,[],1);                %a point belongs to the cluster with the most votes
 cluster2dataMat = -1 .* ones(numClust,numPts);
@@ -141,6 +176,10 @@ if mode == 1
     cluster2dataMat = cluster2dataMat - 1;
     data2cluster = data2cluster - 1;
     data2cluster = data2cluster';
+    
+    clustCent(1:3,:) = clustCent(1:3,:) .* pi .* 2;
+    clustCent(4:6,:) = clustCent(4:6,:) .* boxSize;
+    
     clustCent = clustCent';
 else
     if nargout > 2
@@ -155,4 +194,4 @@ toc
 
 
 
-
+%  save('C:\\Users\\WYZ95\\desktop\\cow_cluster0.mat','data2cluster')
