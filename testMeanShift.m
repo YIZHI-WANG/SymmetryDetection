@@ -21,7 +21,7 @@ profile on
 %     x(:,1+(i-1)*nPtsPerClust:(i)*nPtsPerClust)       = x(:,1+(i-1)*nPtsPerClust:(i)*nPtsPerClust) + repmat(m(:,i),1,nPtsPerClust);   
 % end
 
-load test_cow.mat;
+load test_cow_t.mat;
 
 % testData(1,:) = sum(abs(dataPts(1:3,:)));
 % testData(2,:) = sum(abs(dataPts(4:6,:)));
@@ -30,22 +30,27 @@ load test_cow.mat;
 % testData(2,:) = testData(2,:) ./ 1.271111;
 
 
-testData(1,:) = dataPts(1,:)./ pi ;
+testData(1,:) = dataPts(1,:)./ pi ./ 2;
 testData(2,:) = dataPts(4,:)./ 1.271111;
 
+
 tic
-[clustCent,point2cluster,~,~,clustMembsCell] = MeanShiftClusterT(testData,2,0);
+[clustCent,point2cluster,~,~,~,clustMembsCell] = MeanShiftCluster(testData,2,0);
 toc
 
 numClust = length(clustMembsCell);
 
 
 figure(10),clf,hold on
-cVec = 'bgrcmykbgrcmykbgrcmykbgrcmyk';%, cVec = [cVec cVec];
-for k = 1:numClust
+cVec = 'brcmykbrcmykbrcmykbrcmyk';%, cVec = [cVec cVec];
+for k = 1:numClust-1
     myMembers = clustMembsCell{k};
     myClustCen = clustCent(:,k);
     plot(dataPts(1,myMembers),dataPts(4,myMembers),[cVec(mod(k,length(cVec)) + 1) '.'])
-    plot(myClustCen(1)  .*pi,myClustCen(2) .*1.271111 ,'o','MarkerEdgeColor','k','MarkerFaceColor',cVec(mod(k,length(cVec)) + 1), 'MarkerSize',10)
+    plot(myClustCen(1) .*2.*pi  ,myClustCen(2) .*1.271111,'o','MarkerEdgeColor','k','MarkerFaceColor',cVec(mod(k,length(cVec)) + 1), 'MarkerSize',10)
 end
+%%show noClusters
+myMembers = clustMembsCell{numClust};
+plot(dataPts(1,myMembers),dataPts(4,myMembers), ['g' 'o'])
+
 title(['no shifting, numClust:' int2str(numClust)])

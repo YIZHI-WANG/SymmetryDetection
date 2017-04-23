@@ -1,0 +1,513 @@
+#ifndef IGL_VIEWER_WITH_NANOGUI
+#define IGL_VIEWER_WITH_NANOGUI
+#endif
+
+#ifndef SYMDETEC_SHARED_PATH
+#define SYMDETEC_SHARED_PATH "../shared"
+#endif
+
+#include "symmetryDetection.h"
+
+
+int main(int argc, char *argv[])
+{
+	double prune_threshold = 0.75;
+	double pair_threshold = 0.1;
+	int mode = TRANSFORM_6D;
+	double sampleRatio = 0.5;
+	
+
+	MatrixXd V;
+	MatrixXi F;
+
+	MatrixXd PD1, PD2, LN;
+	VectorXd PV1, PV2;
+	MatrixXd SV;
+	VectorXd SV_Sorted_PV1, SV_Sorted_PV2, SV_Sorted_7d;
+
+	VectorXi V_Index_Sample, V_Index_Dic, V_Index_Prune, V_Index_Sorted_7d, V_Index_Sorted_PV1, V_Index_Sorted_PV2;
+	MatrixXi Pair_Index;
+
+	MatrixXd Transformation;
+
+	int clusterNum;
+	double boxSize;
+	MatrixXd clusterCenter, data2cluster, cluster2data, Patch1, Patch2;
+	VectorXi patch_size, patch_rank;
+	//Load a mesh in OFF format
+	//readOBJ(SYMDETEC_SHARED_PATH "/baseballBat.OBJ", V, F);
+	//readOBJ(SYMDETEC_SHARED_PATH "/disk.OBJ", V, F);
+	//readOBJ(SYMDETEC_SHARED_PATH "/bunny.OBJ", V, F);
+	readOFF(SYMDETEC_SHARED_PATH "/cow.OFF", V, F);
+	//readOFF(SYMDETEC_SHARED_PATH "/cheburashka.off", V, F);
+	//readOBJ(SYMDETEC_SHARED_PATH "/cheburashka_arm.OBJ", V, F);
+	//readOFF(SYMDETEC_SHARED_PATH "/decimated-knight.off", V, F);
+	//readOBJ(SYMDETEC_SHARED_PATH "/dragon.OBJ", V, F);
+	//readOBJ(SYMDETEC_SHARED_PATH "/dragon_head.OBJ", V, F);
+	//readOBJ(SYMDETEC_SHARED_PATH "/chair_002.OBJ", V, F);
+	//readOBJ(SYMDETEC_SHARED_PATH "/plane (15).OBJ", V, F);
+	//readOBJ(SYMDETEC_SHARED_PATH "/dummy.OBJ", V, F);
+	
+	cout << "READ OBJ FINISH!" << endl << endl;
+
+	cout << "Model information:" << endl;
+	cout << "Vertex: " << V.rows() << endl;
+	cout << "Faces: " << F.rows() << endl;
+	cout << endl;
+
+	// Launch MATLAB
+	matlab::mlinit(&engine);
+	if (engine == 0)
+	{
+		cout << "Lunch Matlab Failed!" << endl;
+		return 0;
+	}
+	else
+	{
+		cout << "Lunch Matlab Success!" << endl << endl;
+	}
+
+	//Sampling based on area
+	sample_based_on_area(sampleRatio, V, F, V_Index_Sample);
+	cout << "SAMPLE FINISH!" << endl;
+	cout << "After Sampling, Vertex: " << V_Index_Sample.rows() << ", Sampling Ratio = " << (double)V_Index_Sample.rows() / (double)V.rows() << endl << endl;
+	
+	//Sampling randomly
+	/*random_sample(V.rows(), sampleRatio, V_Index_Sample);
+	cout << "SAMPLE FINISH!" << endl;
+	cout << "After Sampling, Vertex: " << V_Index_Sample.rows() << endl << endl;*/
+
+	boxSize = compute_boxSize(V);
+	cout << "Box size = " << boxSize << endl << endl;
+
+	//Compute curvature directions via quadric fitting
+	compute_curvature(V, F, 10 * boxSize, PD1, PD2, PV1, PV2);
+	cout << "COMPUTE PRINCIPAL CURVATURE FINISH!" << endl << endl;
+
+	//Compute signature 娄脪 = PV1/PV2
+	compute_signature(PV1, PV2, SV);
+	cout << "COMPUTE SIGNATURE FINISH!" << endl << endl;
+
+	compute_local_frame(PD1, PD2, LN);
+	cout << "COMPUTE LOCAL FRAME FINISH!" << endl << endl;
+
+	//Prune umbilic points
+	prune_umbilic_points(SV, V_Index_Sample, V_Index_Prune, V_Index_Dic, prune_threshold);
+	cout << "PRUNE FINISH!" << endl;
+	cout << "After Pruning, Vertex: " << V_Index_Prune.rows() << endl << endl;
+
+	//Sort Siganature
+	sort_by_signature(SV, SV_Sorted_7d, SV_Sorted_PV1, SV_Sorted_PV2, V_Index_Sorted_7d, V_Index_Sorted_PV1, V_Index_Sorted_PV2);
+	cout << "SORT FINISH!" << endl << endl;
+
+	//Pairing
+	search_pair(mode, boxSize, V, V_Index_Dic, V_Index_Prune, V_Index_Sorted_7d, V_Index_Sorted_PV1, V_Index_Sorted_PV2, SV, SV_Sorted_7d, SV_Sorted_PV1, SV_Sorted_PV2, pair_threshold, Pair_Index);
+	cout << "PAIR FINISH!" << endl;
+	cout << "After Pairing, Pair: " << Pair_Index.rows() << endl << endl;
+
+	//Compute Transformation 
+	compute_transformation(Pair_Index, V, PV1, PV2, PD1, PD2, LN, mode, Transformation);
+	cout << "COMPUTE TRANSFORMATION FINISH!" << endl << endl;
+
+	//Mean-Shift
+	clusterNum = MeanShift_Cluster(mode, V, Transformation, clusterCenter, data2cluster, cluster2data);
+	cout << "MEAN-SHIFT FINISH!" << endl;
+	cout << "After MEAN-SHIFT, cluster center number: " << clusterNum << endl << endl;
+
+	cout << "START PATCHING..." << endl;
+	patching(V, F, Pair_Index, clusterCenter, cluster2data, Patch1, Patch2, patch_size, patch_rank);
+	cout << "PATCHING FINISH!" << endl << endl;
+
+	// Close MATLAB
+	matlab::mlclose(&engine);
+
+	// Plot the mesh
+	m_viewer.data.set_mesh(V, F);
+
+
+	int cn = 0;
+	int pair_n = 0;
+	int cluster = -1;
+	int which_patch = 0;
+	bool show_points = false;
+
+
+	// Extend viewer menu
+	m_viewer.callback_init = [&](igl::viewer::Viewer& viewer)
+	{
+		m_viewer.ngui->addVariable<int>("Show Which Cluster", [&cluster](int val) {
+			cluster = val; // set
+		}, [&]() {
+			return cluster; // get
+		});
+		// Add buttons
+		m_viewer.ngui->addButton("Show Sampling Points", [V, V_Index_Sample]() {
+			m_viewer.data.points.resize(0, 0);
+			
+			for (int j = 0; j < V_Index_Sample.size(); j++)
+			{
+				m_viewer.data.add_points(V.row(V_Index_Sample(j)), Eigen::RowVector3d(0, 0, 1));
+			}
+		});
+
+		m_viewer.ngui->addButton("Show Pair", [V, Pair_Index, &pair_n]() {
+			Show_Pair_Points(V, Pair_Index, -1);
+			pair_n++;
+			if (pair_n >= Pair_Index.rows())
+			{
+				pair_n = 0;
+			}
+		});
+		m_viewer.ngui->addButton("Show/Close Samples", [V, &show_points]() {
+			show_points = !show_points;
+		});
+
+		m_viewer.ngui->addButton("Show Your Cluster", [V, &cluster, clusterCenter, clusterNum, cluster2data, Pair_Index, &cn]() {
+			m_viewer.data.lines.resize(0, 0);
+			if (cluster < 0)
+			{
+				cout << "Number should be >= 0." << endl;
+			}
+			else if (cluster >= clusterNum)
+			{
+				cout << "Number should be <= " << clusterNum - 1 << "." << endl;
+			}
+			else
+			{
+				cn = cluster;
+				VectorXi vertex_in_cluster;
+				Extract_Vertex(cluster2data, Pair_Index, cn, vertex_in_cluster);
+				int num = vertex_in_cluster.rows();
+				MatrixXd V_in_Cluster;
+				V_in_Cluster.resize(num, 3);
+				for (int j = 0; j < num; j++)
+				{
+					V_in_Cluster.row(j) = V.row(vertex_in_cluster(j));
+				}
+				m_viewer.data.set_points(V_in_Cluster, Eigen::RowVector3d(0, 1, 0));
+				for (int j = 0; j < num / 2; j++)
+				{
+					m_viewer.data.add_edges
+					(
+						V.row(vertex_in_cluster(j * 2)),
+						V.row(vertex_in_cluster(j * 2 + 1)),
+						Eigen::RowVector3d(1, 0, 0)
+					);
+				}
+				cout << "clsuter " << cn << ": ";
+				for (int j = 0; j < clusterCenter.cols(); j++)
+				{
+					cout << clusterCenter(cn, j) << ", ";
+				}
+				cout << endl;
+				cn++;
+				if (cn >= clusterNum)
+				{
+					cn = 0;
+				}
+			}
+		});
+
+		m_viewer.ngui->addButton("Show Next Cluster", [V, &show_points ,V_Index_Sample, clusterCenter, clusterNum, cluster2data, Pair_Index, &cn]() {
+			m_viewer.data.lines.resize(0, 0);
+			VectorXi vertex_in_cluster;
+			Extract_Vertex(cluster2data, Pair_Index, cn, vertex_in_cluster);
+			int num = vertex_in_cluster.rows();
+			MatrixXd V_in_Cluster;
+			V_in_Cluster.resize(num, 3);
+			for (int j = 0; j < num; j++)
+			{
+				V_in_Cluster.row(j) = V.row(vertex_in_cluster(j));
+			}
+			m_viewer.data.set_points(V_in_Cluster, Eigen::RowVector3d(0, 1, 0));
+			m_viewer.data.labels_positions = Eigen::MatrixXd(0, 3);
+			m_viewer.data.labels_strings.clear();
+			if (show_points)
+			{
+				for (int j = 0; j < V_Index_Sample.size(); j++)
+				{
+					m_viewer.data.add_points(V.row(V_Index_Sample(j)), Eigen::RowVector3d(0, 0, 1));
+				}
+			}
+			
+			for (int j = 0; j < num/2; j++)
+			{
+				VectorXd v1 = V.row(vertex_in_cluster(j * 2));
+				VectorXd v2 = V.row(vertex_in_cluster(j * 2 + 1));
+				stringstream l1, l2;
+				l1 << vertex_in_cluster(j * 2);
+				l2 << vertex_in_cluster(j * 2 + 1);
+				m_viewer.data.add_edges(v1.transpose(),v2.transpose(),Eigen::RowVector3d(1, 0, 0));
+				//m_viewer.data.add_label(v1.transpose(), l1.str());
+				//m_viewer.data.add_label(v2.transpose(), l2.str());
+			}
+			cout << "clsuter " << cn << ": ";
+			for (int j = 0; j < clusterCenter.cols(); j++)
+			{
+				cout << clusterCenter(cn, j) << ", ";
+			}
+			cout << endl;
+			cn++;
+			if (cn >= clusterNum)
+			{
+				cn = 0;
+			}
+		});
+
+		m_viewer.ngui->addButton("Show This Patch", [V, Patch1, Patch2, &cn]() {
+			cn--;
+			if (cn < 0)
+			{
+				cout << "I don't know which cluster's patch..." << endl;
+			}
+			else
+			{
+				MatrixXd V_in_patch;
+				V_in_patch.resize(1, 3);
+				int v;
+				int pointer;
+
+				pointer = 0;
+				v = Patch1(cn, pointer++);
+				while (v >= 0)
+				{
+					V_in_patch = V.row(v);
+					m_viewer.data.add_points(V_in_patch, Eigen::RowVector3d(0, 1, 0));
+					v = Patch1(cn, pointer++);
+				}
+
+				pointer = 0;
+				v = Patch2(cn, pointer++);
+				while (v >= 0)
+				{
+					V_in_patch = V.row(v);
+					m_viewer.data.add_points(V_in_patch, Eigen::RowVector3d(1, 0, 0));
+					v = Patch2(cn, pointer++);
+				}
+			}
+			cn++;
+		});
+
+		m_viewer.ngui->addButton("Show Next Patch", [V, &show_points, V_Index_Sample, clusterCenter, clusterNum, cluster2data, Pair_Index, Patch1, Patch2, patch_rank, patch_size, &which_patch]() {
+			int cluster = patch_rank(which_patch);
+			cout << "Patch " << which_patch << ", size = " << patch_size(cluster) << "." << endl;
+			cout << "Clusted center : ";
+			for (int j = 0; j < clusterCenter.cols(); j++)
+			{
+				cout << clusterCenter(cluster, j) << ", ";
+			}
+			cout << endl;
+
+			m_viewer.data.lines.resize(0, 0);
+			m_viewer.data.points.resize(0, 0);
+			VectorXi vertex_in_cluster;
+			Extract_Vertex(cluster2data, Pair_Index, cluster, vertex_in_cluster);
+			int num = vertex_in_cluster.rows();
+			MatrixXd V_in_Cluster;
+			V_in_Cluster.resize(num, 3);
+			for (int j = 0; j < num; j++)
+			{
+				V_in_Cluster.row(j) = V.row(vertex_in_cluster(j));
+			}
+
+			for (int j = 0; j < num / 2; j++)
+			{
+				VectorXd v1 = V.row(vertex_in_cluster(j * 2));
+				VectorXd v2 = V.row(vertex_in_cluster(j * 2 + 1));
+				stringstream l1, l2;
+				l1 << vertex_in_cluster(j * 2);
+				l2 << vertex_in_cluster(j * 2 + 1);
+				m_viewer.data.add_edges(v1.transpose(), v2.transpose(), Eigen::RowVector3d(0, 0, 1));
+				//m_viewer.data.add_label(v1.transpose(), l1.str());
+				//m_viewer.data.add_label(v2.transpose(), l2.str());
+			}
+
+			MatrixXd V_in_patch;
+			V_in_patch.resize(1, 3);
+			int v;
+			int pointer;
+
+			pointer = 0;
+			v = Patch1(cluster, pointer++);
+			while (v >= 0)
+			{
+				V_in_patch = V.row(v);
+				m_viewer.data.add_points(V_in_patch, Eigen::RowVector3d(0, 1, 0));
+				v = Patch1(cluster, pointer++);
+			}
+
+			pointer = 0;
+			v = Patch2(cluster, pointer++);
+			while (v >= 0)
+			{
+				V_in_patch = V.row(v);
+				m_viewer.data.add_points(V_in_patch, Eigen::RowVector3d(1, 0, 0));
+				v = Patch2(cluster, pointer++);
+			}
+
+			which_patch++;
+			if (which_patch >= clusterNum)
+			{
+				which_patch = 0;
+			}
+
+		});
+		// Generate menu
+		m_viewer.screen->performLayout();
+
+		return false;
+	};
+
+	m_viewer.callback_key_down = [&](igl::viewer::Viewer& viewer, unsigned char key, int modifier)
+	{
+		//std::cout << "Key: " << key << " " << (unsigned int)key << std::endl;
+		if (key == 'S')
+		{
+			m_viewer.data.lines.resize(0, 0);
+			VectorXi vertex_in_cluster;
+			Extract_Vertex(cluster2data, Pair_Index, cn, vertex_in_cluster);
+			int num = vertex_in_cluster.rows();
+			MatrixXd V_in_Cluster;
+			V_in_Cluster.resize(num, 3);
+			for (int j = 0; j < num; j++)
+			{
+				V_in_Cluster.row(j) = V.row(vertex_in_cluster(j));
+			}
+			m_viewer.data.set_points(V_in_Cluster, Eigen::RowVector3d(0, 1, 0));
+			m_viewer.data.labels_positions = Eigen::MatrixXd(0, 3);
+			m_viewer.data.labels_strings.clear();
+			if (show_points)
+			{
+				for (int j = 0; j < V_Index_Sample.size(); j++)
+				{
+					m_viewer.data.add_points(V.row(V_Index_Sample(j)), Eigen::RowVector3d(0, 0, 1));
+				}
+			}
+
+			for (int j = 0; j < num / 2; j++)
+			{
+				VectorXd v1 = V.row(vertex_in_cluster(j * 2));
+				VectorXd v2 = V.row(vertex_in_cluster(j * 2 + 1));
+				stringstream l1, l2;
+				l1 << vertex_in_cluster(j * 2);
+				l2 << vertex_in_cluster(j * 2 + 1);
+				m_viewer.data.add_edges(v1.transpose(), v2.transpose(), Eigen::RowVector3d(1, 0, 0));
+				//m_viewer.data.add_label(v1.transpose(), l1.str());
+				//m_viewer.data.add_label(v2.transpose(), l2.str());
+			}
+			cout << "clsuter " << cn << ": ";
+			for (int j = 0; j < clusterCenter.cols(); j++)
+			{
+				cout << clusterCenter(cn, j) << ", ";
+			}
+			cout << endl;
+			cn++;
+			if (cn >= clusterNum)
+			{
+				cn = 0;
+			}
+		}
+		else if (key == 'P')
+		{
+			cn--;
+			if (cn < 0)
+			{
+				cout << "I don't know which cluster's patch..." << endl;
+			}
+			else
+			{
+				MatrixXd V_in_patch;
+				V_in_patch.resize(1, 3);
+				int v;
+				int pointer;
+
+				pointer = 0;
+				v = Patch1(cn, pointer++);
+				while (v >= 0)
+				{
+					V_in_patch = V.row(v);
+					m_viewer.data.add_points(V_in_patch, Eigen::RowVector3d(0, 1, 0));
+					v = Patch1(cn, pointer++);
+				}
+
+				pointer = 0;
+				v = Patch2(cn, pointer++);
+				while (v >= 0)
+				{
+					V_in_patch = V.row(v);
+					m_viewer.data.add_points(V_in_patch, Eigen::RowVector3d(1, 0, 0));
+					v = Patch2(cn, pointer++);
+				}
+			}
+			cn++;
+		}
+		else if (key == 'N')
+		{
+			int cluster = patch_rank(which_patch);
+			cout << "Patch " << which_patch << ", size = " << patch_size(cluster) << "." << endl;
+			cout << "Clusted center : ";
+			for (int j = 0; j < clusterCenter.cols(); j++)
+			{
+				cout << clusterCenter(cluster, j) << ", ";
+			}
+			cout << endl;
+
+			m_viewer.data.lines.resize(0, 0);
+			m_viewer.data.points.resize(0, 0);
+			VectorXi vertex_in_cluster;
+			Extract_Vertex(cluster2data, Pair_Index, cluster, vertex_in_cluster);
+			int num = vertex_in_cluster.rows();
+			MatrixXd V_in_Cluster;
+			V_in_Cluster.resize(num, 3);
+			for (int j = 0; j < num; j++)
+			{
+				V_in_Cluster.row(j) = V.row(vertex_in_cluster(j));
+			}
+
+			for (int j = 0; j < num / 2; j++)
+			{
+				VectorXd v1 = V.row(vertex_in_cluster(j * 2));
+				VectorXd v2 = V.row(vertex_in_cluster(j * 2 + 1));
+				stringstream l1, l2;
+				l1 << vertex_in_cluster(j * 2);
+				l2 << vertex_in_cluster(j * 2 + 1);
+				m_viewer.data.add_edges(v1.transpose(), v2.transpose(), Eigen::RowVector3d(0, 0, 1));
+				//m_viewer.data.add_label(v1.transpose(), l1.str());
+				//m_viewer.data.add_label(v2.transpose(), l2.str());
+			}
+
+			MatrixXd V_in_patch;
+			V_in_patch.resize(1, 3);
+			int v;
+			int pointer;
+
+			pointer = 0;
+			v = Patch1(cluster, pointer++);
+			while (v >= 0)
+			{
+				V_in_patch = V.row(v);
+				m_viewer.data.add_points(V_in_patch, Eigen::RowVector3d(0, 1, 0));
+				v = Patch1(cluster, pointer++);
+			}
+
+			pointer = 0;
+			v = Patch2(cluster, pointer++);
+			while (v >= 0)
+			{
+				V_in_patch = V.row(v);
+				m_viewer.data.add_points(V_in_patch, Eigen::RowVector3d(1, 0, 0));
+				v = Patch2(cluster, pointer++);
+			}
+
+			which_patch++;
+			if (which_patch >= clusterNum)
+			{
+				which_patch = 0;
+			}
+		}
+		return false;
+	};
+
+	m_viewer.launch();
+
+}
