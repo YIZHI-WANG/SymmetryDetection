@@ -257,16 +257,18 @@ void Mesh::remesh()
 	double mean_area = totalArea / 2 / face_num_0 ;
 	//double cut_area = (unit_area < min_area_0) ? unit_area : min_area_0;
 	//double cut_area = (unit_area < mean_area) ? unit_area : mean_area;
-	double cut_area = mean_area / remesh_fineness;
-	matlab::mlsetmatrix(&engine, "vertex", vertex);
-	matlab::mlsetmatrix(&engine, "face", face);
-	matlab::mlsetscalar(&engine, "cut_area", cut_area);
+	if (remesh_fineness != 0)
+	{
+		double cut_area = mean_area / remesh_fineness;
+		matlab::mlsetmatrix(&engine, "vertex", vertex);
+		matlab::mlsetmatrix(&engine, "face", face);
+		matlab::mlsetscalar(&engine, "cut_area", cut_area);
 
-	matlab::mleval(&engine, "[new_vertexs,new_faces] = remesh(vertex, face ,cut_area,1);");
+		matlab::mleval(&engine, "[new_vertexs,new_faces] = remesh(vertex, face ,cut_area,1);");
 
-	matlab::mlgetmatrix(&engine, "new_vertexs", vertex);
-	matlab::mlgetmatrix(&engine, "new_faces", face);
-
+		matlab::mlgetmatrix(&engine, "new_vertexs", vertex);
+		matlab::mlgetmatrix(&engine, "new_faces", face);
+	}
 
 	vertex_num = vertex.rows();
 	face_num = face.rows();
@@ -395,7 +397,7 @@ void Mesh::pairing()
 	int max_size = sample_num * (sample_num - 1) / 2;
 	int _pair_size = 0;
 
-	double dist_threshold = boxSize * 0.02;
+	double dist_threshold = boxSize * 0.03;
 
 	MatrixXi _Pair_Index(max_size, 2);
 
@@ -765,7 +767,7 @@ void Mesh::meanShift_cluster()
 	//cout << "mode = " << matlab::mlgetscalar(&engine, "mode") << endl;
 	//cout << "mode = " << band_width << endl;
 	//Cluster using matlab
-	matlab::mleval(&engine, "[clustCent,data2cluster,cluster2data,numClust,clusterSize] = MeanShiftCluster(dataPts,mode,boxSize,grid);");
+	matlab::mleval(&engine, "[clustCent,data2cluster,cluster2data,numClust,clusterSize,~,clusterRank] = MeanShiftCluster(dataPts,mode,boxSize,grid);");
 
 	// Get clustering
 	matlab::mlgetmatrix(&engine, "clustCent", cluster_center);
@@ -777,6 +779,15 @@ void Mesh::meanShift_cluster()
 	//double bandWidth = matlab::mlgetscalar(&engine, "bandWidth");
 	cluster_num =  numClust;
 
+	MatrixXd rank;
+	clusterRank.resize(numClust);
+	matlab::mlgetmatrix(&engine, "clusterRank", rank);
+	for (int i = 0; i < cluster_num; i++)
+	{
+		clusterRank(i) = rank(i, 0);
+	}
+
+	
 	//cout << "bandWidth = " << bandWidth << endl;
 
 	cout << "Clustering Finish!" << endl;
@@ -842,17 +853,38 @@ void Mesh::patching()
 	//cout << "patching_threshold" << patching_threshold << endl;
 
 	//cout << patching_mode << endl;
-	matlab::mleval(&engine, " [ patch1, patch2, patchSize ] = Patching_entrance( mode, threshold, vertex, face, transformation, vertex_in_cluster, clusterSize);");
+	matlab::mleval(&engine, " [ patch_count, patch1, patch2, patch_in_cluster_num, patch_2_clsuter,clsuter_2_patch,patchSize] = Patching_entrance( mode, threshold, vertex, face, transformation, vertex_in_cluster, clusterSize);");
 
+	patch_count = matlab::mlgetscalar(&engine, "patch_count");
 	matlab::mlgetmatrix(&engine, "patch1", patch1);
 	matlab::mlgetmatrix(&engine, "patch2", patch2);
 
+	MatrixXd patch_cluster_num;
+	matlab::mlgetmatrix(&engine, "patch_in_cluster_num", patch_cluster_num);
+	patch_in_cluster_num.resize(cluster_num);
+	for (int i = 0; i < cluster_num; i++)
+	{
+		int test = patch_cluster_num(0, i);
+		patch_in_cluster_num(i) = patch_cluster_num(0, i);
+	}
+
+	MatrixXd temp_mat;
+	matlab::mlgetmatrix(&engine, "patch_2_clsuter", temp_mat);
+	patch_2_clutser.resize(patch_count);
+	for (int i = 0; i < patch_count; i++)
+	{
+		int test = temp_mat(0, i);
+		cout << i << "," << test << endl;
+ 		patch_2_clutser(i) = temp_mat(0, i);
+	}
+	matlab::mlgetmatrix(&engine, "clsuter_2_patch", clsuter_2_patch);
+	
 	MatrixXd patchSize;
 	matlab::mlgetmatrix(&engine, "patchSize", patchSize);
 
 	VectorXi temp;
-	patch_size.resize(cluster_num);
-	for (int j = 0; j < cluster_num; j++)
+	patch_size.resize(patch_count);
+	for (int j = 0; j < patch_count; j++)
 	{
 		patch_size(j) = patchSize(0, j);
 	}
@@ -1307,20 +1339,52 @@ VectorXd Mesh::get_cluster_center(int which_cluster)
 	return center;
 }
 
-VectorXd Mesh::get_patch(int which_patch, int which_cluster)
+VectorXd Mesh::get_patch(int which, int which_cluster, int which_patch)
 {
+	int patch_row = clsuter_2_patch(which_cluster, which_patch);
 	VectorXd patch;
-	if(which_patch == 1)
+	if (patch_row >= 0)
 	{
-		patch = patch1.row(which_cluster);
+		if (which == 1)
+		{
+
+			patch = patch1.row(patch_row);
+		}
+		else
+		{
+			patch = patch2.row(patch_row);
+		}
+		return patch;
 	}
 	else
 	{
-		patch = patch2.row(which_cluster);
+		patch.resize(0);
+		return patch;
 	}
-	return patch;
 }
 
+VectorXd Mesh::get_patch(int which, int patch_row)
+{
+	VectorXd patch;
+	if (patch_row >= 0)
+	{
+		if (which == 1)
+		{
+
+			patch = patch1.row(patch_row);
+		}
+		else
+		{
+			patch = patch2.row(patch_row);
+		}
+		return patch;
+	}
+	else
+	{
+		patch.resize(0);
+		return patch;
+	}
+}
 int Mesh::get_nth_patch_index(int n)
 {
 	return patch_rank(n);
@@ -1334,6 +1398,26 @@ int Mesh::get_patch_size(int n)
 int Mesh::get_cluster_num()
 {
 	return cluster_num;
+}
+
+int Mesh::get_max_patch(int cluster)
+{
+	return patch_in_cluster_num(cluster);
+}
+
+int Mesh::get_cluster_from_rank(int rank)
+{
+	return clusterRank(rank);
+}
+
+int Mesh::get_cluster_from_patch(int which_patch)
+{
+	return patch_2_clutser(which_patch);
+}
+
+int Mesh::get_patch_num()
+{
+	return patch_count;
 }
 
 double Mesh::get_boxSize()

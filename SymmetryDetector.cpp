@@ -201,6 +201,7 @@ void SymmetryDetector::launch_viewer()
 void SymmetryDetector::set_viewer_parameter()
 {
 	current_show_cluster = 0;
+	current_patch = 0;
 	current_show_patch = 0;
 	input_cluster_num = 0;
 	input_patch_num = 0;
@@ -330,7 +331,7 @@ void SymmetryDetector::set_viewer_menu()
 
 		viewer.ngui->addButton("Show Set Cluster", [&]() {
 			clear_points_and_lines();
-
+			current_patch = 0;
 			int cluster_num = mesh->get_cluster_num();
 
 			if (input_cluster_num < 0)
@@ -358,6 +359,7 @@ void SymmetryDetector::set_viewer_menu()
 			show_cluster(current_show_cluster);
 
 			current_show_cluster++;
+			current_patch = 0;
 			if (current_show_cluster >= mesh->get_cluster_num())
 			{
 				current_show_cluster = 0;
@@ -372,7 +374,24 @@ void SymmetryDetector::set_viewer_menu()
 			}
 			else
 			{
-				show_patch(current_show_cluster);
+				int which_cluster = mesh->get_cluster_from_rank(current_show_cluster);
+				int max_patch = mesh->get_max_patch(which_cluster);
+				cout << "This is the ";
+				switch (current_patch)
+				{
+				case 0:
+					cout << "1st "; break;
+				case 1:
+					cout << "2nd "; break;
+				case 2:
+					cout << "3rd "; break;
+				default:
+					cout << current_patch + 1 << "th "; break;
+				}
+				cout << "patch of cluster " << current_show_cluster + 1 << "." << endl;
+				show_patch(which_cluster, current_patch);
+				current_patch++;
+				if (current_patch == max_patch) current_patch = 0;
 			}
 			current_show_cluster++;
 		});
@@ -380,21 +399,21 @@ void SymmetryDetector::set_viewer_menu()
 		viewer.ngui->addButton("Show Set Patch", [&]() {
 			clear_points_and_lines();
 
-			int cluster_num = mesh->get_cluster_num();
+			int patch_num = mesh->get_patch_num();
 
 			if (input_patch_num < 0)
 			{
 				cout << "Number should be >= 0." << endl;
 			}
-			else if (input_patch_num >= cluster_num)
+			else if (input_patch_num >= mesh->get_patch_num())
 			{
-				cout << "Number should be <= " << cluster_num - 1 << "." << endl;
+				cout << "Number should be <= " << patch_num - 1 << "." << endl;
 			}
 			else
 			{
 				show_nth_patch(input_patch_num);
 				current_show_patch = input_patch_num + 1;
-				if (current_show_patch >= cluster_num)
+				if (current_show_patch >= patch_num)
 				{
 					current_show_patch = 0;
 				}
@@ -405,7 +424,8 @@ void SymmetryDetector::set_viewer_menu()
 			show_nth_patch(current_show_patch);
 
 			current_show_patch++;
-			if (current_show_patch >= mesh->get_cluster_num())
+			
+			if (current_show_patch >= mesh->get_patch_num())
 			{
 				current_show_patch = 0;
 			}
@@ -446,6 +466,7 @@ void SymmetryDetector::set_viewer_keys()
 			{
 				current_show_cluster = 0;
 			}
+			current_patch = 0;
 		}
 		else if (key == 'P')
 		{
@@ -456,16 +477,44 @@ void SymmetryDetector::set_viewer_keys()
 			}
 			else
 			{
-				show_patch(current_show_cluster);
+				int which_cluster = mesh->get_cluster_from_rank(current_show_cluster);
+				int max_patch = mesh->get_max_patch(which_cluster);
+				cout << "This is the ";
+				switch (current_patch)
+				{
+				case 0:
+					cout << "1st "; break;
+				case 1:
+					cout << "2nd "; break;
+				case 2: 
+					cout << "3rd "; break;
+				default:
+					cout << current_patch+1 << "th "; break;
+				}
+				cout << "patch of cluster " << current_show_cluster + 1 << "."<<endl;
+				show_patch(which_cluster, current_patch);
+				current_patch++;
+				if (current_patch == max_patch) current_patch = 0;
 			}
 			current_show_cluster++;
+			
+			//current_show_cluster--;
+			//if (current_show_cluster < 0)
+			//{
+			//	cout << "I don't have this patch: " << current_show_cluster << "..." << endl;
+			//}
+			//else
+			//{
+			//	//show_patch(current_show_cluster);
+			//}
+			//current_show_cluster++;
 		}
 		else if (key == 'N')
 		{
 			show_nth_patch(current_show_patch);
 
 			current_show_patch++;
-			if (current_show_patch >= mesh->get_cluster_num())
+			if (current_show_patch >= mesh->get_patch_num())
 			{
 				current_show_patch = 0;
 			}
@@ -487,7 +536,7 @@ void SymmetryDetector::show_sample_points()
 
 	for (int j = 0; j < V_Index_Sample.size(); j++)
 	{
-		viewer.data.add_points(V.row(V_Index_Sample(j)), Eigen::RowVector3d(0, 0, 1));
+		viewer.data.add_points(V.row(V_Index_Sample(j)), Eigen::RowVector3d(0.25, 0.25, 1));
 	}
 }
 
@@ -499,7 +548,7 @@ void SymmetryDetector::show_pruned_points()
 
 	for (int j = 0; j < V_Index_Sample.size(); j++)
 	{
-		viewer.data.add_points(V.row(V_Index_Sample(j)), Eigen::RowVector3d(0, 0, 1));
+		viewer.data.add_points(V.row(V_Index_Sample(j)), Eigen::RowVector3d(0.25, 0.25, 1));
 	}
 }
 
@@ -513,7 +562,7 @@ void SymmetryDetector::show_pairs()
 		(
 			V.row(Pair_Index(i, 0)),
 			V.row(Pair_Index(i, 1)),
-			Eigen::RowVector3d(1, 0, 0)
+			Eigen::RowVector3d(0.25, 0.25, 1)
 		);
 	}
 }
@@ -522,6 +571,7 @@ void SymmetryDetector::show_cluster(int which_cluster)
 {
 	MatrixXd V = mesh->get_vertex();
 	VectorXi vertex_in_cluster;
+	which_cluster = mesh->get_cluster_from_rank(which_cluster);
 	VectorXd clusterCenter = mesh->get_cluster_center(which_cluster);
 	mesh->extract_vertex_from_cluster(which_cluster, vertex_in_cluster);
 	int num = vertex_in_cluster.rows();
@@ -531,14 +581,14 @@ void SymmetryDetector::show_cluster(int which_cluster)
 	{
 		V_in_Cluster.row(j) = V.row(vertex_in_cluster(j));
 	}
-	viewer.data.set_points(V_in_Cluster, Eigen::RowVector3d(0, 1, 0));
+	viewer.data.set_points(V_in_Cluster, Eigen::RowVector3d(1, 0, 0.5));
 	for (int j = 0; j < num / 2; j++)
 	{
 		viewer.data.add_edges
 		(
 			V.row(vertex_in_cluster(j * 2)),
 			V.row(vertex_in_cluster(j * 2 + 1)),
-			Eigen::RowVector3d(1, 0, 0)
+			Eigen::RowVector3d(0.25, 0.25, 1)
 		);
 	}
 	cout << "Clsuter " << which_cluster << ": ";
@@ -550,40 +600,92 @@ void SymmetryDetector::show_cluster(int which_cluster)
 	cout << endl;
 }
 
-void SymmetryDetector::show_patch(int which_cluster)
+void SymmetryDetector::show_patch(int which_patch)
 {
+	//clear_points_and_lines();
+
+	//show_cluster(current_show_cluster);
+	//which_cluster = mesh->get_cluster_from_rank(which_cluster);
 	MatrixXd V_in_patch, V;
 	VectorXd Patch1, Patch2;
 	V_in_patch.resize(1, 3);
 	V = mesh->get_vertex();
-	Patch1 = mesh->get_patch(1, which_cluster);
-	Patch2 = mesh->get_patch(2, which_cluster);
+	Patch1 = mesh->get_patch(1,which_patch);
+	Patch2 = mesh->get_patch(2,which_patch);
+	int v;
+	int pointer;
+	
+	if (Patch1.rows() > 0)
+	{
+		pointer = 0;
+		v = Patch1(pointer++);
+		while (v >= 0)
+		{
+			V_in_patch = V.row(v);
+			viewer.data.add_points(V_in_patch, Eigen::RowVector3d(0, 1, 0));
+			v = Patch1(pointer++);
+		}
+	}
+	
+	if (Patch2.rows() > 0)
+	{
+		pointer = 0;
+		v = Patch2(pointer++);
+		while (v >= 0)
+		{
+			V_in_patch = V.row(v);
+			viewer.data.add_points(V_in_patch, Eigen::RowVector3d(1, 0, 0));
+			v = Patch2(pointer++);
+		}
+	}
+	
+}
+
+void SymmetryDetector::show_patch(int which_cluster,int which_patch)
+{
+	//clear_points_and_lines();
+
+	//show_cluster(current_show_cluster);
+	//which_cluster = mesh->get_cluster_from_rank(which_cluster);
+	MatrixXd V_in_patch, V;
+	VectorXd Patch1, Patch2;
+	V_in_patch.resize(1, 3);
+	V = mesh->get_vertex();
+	Patch1 = mesh->get_patch(1, which_cluster, which_patch);
+	Patch2 = mesh->get_patch(2, which_cluster, which_patch);
 	int v;
 	int pointer;
 
-	pointer = 0;
-	v = Patch1(pointer++);
-	while (v >= 0)
+	if (Patch1.rows() > 0)
 	{
-		V_in_patch = V.row(v);
-		viewer.data.add_points(V_in_patch, Eigen::RowVector3d(0, 1, 0));
+		pointer = 0;
 		v = Patch1(pointer++);
+		while (v >= 0)
+		{
+			V_in_patch = V.row(v);
+			viewer.data.add_points(V_in_patch, Eigen::RowVector3d(0, 1, 0));
+			v = Patch1(pointer++);
+		}
 	}
 
-	pointer = 0;
-	v = Patch2(pointer++);
-	while (v >= 0)
+	if (Patch2.rows() > 0)
 	{
-		V_in_patch = V.row(v);
-		viewer.data.add_points(V_in_patch, Eigen::RowVector3d(1, 0, 0));
+		pointer = 0;
 		v = Patch2(pointer++);
+		while (v >= 0)
+		{
+			V_in_patch = V.row(v);
+			viewer.data.add_points(V_in_patch, Eigen::RowVector3d(1, 0, 0));
+			v = Patch2(pointer++);
+		}
 	}
-}
 
+}
 void SymmetryDetector::show_nth_patch(int n)
 {
-	int which_cluster = mesh->get_nth_patch_index(n);
-	int patch_size = mesh->get_patch_size(which_cluster);
+	int which_patch = mesh->get_nth_patch_index(n);
+	int which_cluster = mesh->get_cluster_from_patch(which_patch);
+	int patch_size = mesh->get_patch_size(which_patch);
 	VectorXd clusterCenter = mesh->get_cluster_center(which_cluster);
 	MatrixXd V = mesh->get_vertex();
 	int dimension = clusterCenter.rows();
@@ -617,13 +719,13 @@ void SymmetryDetector::show_nth_patch(int n)
 		l2 << vertex_in_cluster(j * 2 + 1);
 		if (show_pair_lines)
 		{
-			viewer.data.add_edges(v1.transpose(), v2.transpose(), Eigen::RowVector3d(0, 0, 1));
+			viewer.data.add_edges(v1.transpose(), v2.transpose(), Eigen::RowVector3d(0.25, 0.25, 1));
 		}
 		//viewer.data.add_label(v1.transpose(), l1.str());
 		//viewer.data.add_label(v2.transpose(), l2.str());
 	}
 
-	show_patch(which_cluster);
+	show_patch(which_patch);
 
 }
 

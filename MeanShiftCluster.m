@@ -1,4 +1,4 @@
-function [clustCent,data2cluster,cluster2dataMat,numClust,clusterSize,cluster2dataCell] = MeanShiftCluster(dataPts,mode,boxSize,grid)
+function [clustCent,data2cluster,cluster2dataMat,numClust,clusterSize,cluster2dataCell,clusterRank] = MeanShiftCluster(dataPts,mode,boxSize,grid)
 tic
 
 zeroCluster = false;
@@ -324,7 +324,8 @@ else
     end
 end
 toc
-
+[~,clusterRank] = sort(clusterSize,'descend');
+clusterRank = clusterRank - 1;
 
 switch mode
     case 0

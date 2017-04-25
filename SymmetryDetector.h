@@ -36,6 +36,7 @@ private:
 	//the viewer body and parameter
 	viewer::Viewer viewer;
 	int current_show_cluster;
+	int current_patch;
 	int current_show_patch;
 	int input_cluster_num;
 	int input_patch_num;
@@ -53,7 +54,8 @@ private:
 	void show_pruned_points();
 	void show_pairs();
 	void show_cluster(int which_cluster);
-	void show_patch(int which_cluster);
+	void show_patch(int which_cluster, int which_patch);
+	void show_patch(int which_patch);
 	void show_nth_patch(int n);
 	void on_open_event();
 };

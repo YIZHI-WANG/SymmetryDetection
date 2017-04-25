@@ -30,10 +30,15 @@ public:
 	const VectorXi& get_pruned_index();
 	const MatrixXi& get_pairs();
 	VectorXd get_cluster_center(int which_cluster);
-	VectorXd get_patch(int which_patch, int which_cluster);
+	VectorXd get_patch(int which, int which_cluster, int which_patch);
+	VectorXd get_patch(int which, int patch_row);
 	int get_nth_patch_index(int n);
 	int get_patch_size(int n);
 	int get_cluster_num();
+	int get_max_patch(int cluster);
+	int get_cluster_from_rank(int rank);
+	int get_cluster_from_patch(int which_patch);
+	int get_patch_num();
 	double get_boxSize();
 private:
 	MatrixXd vertex;
@@ -86,10 +91,13 @@ private:
 	int cluster_num;
 	MatrixXd cluster_center, data2cluster, cluster2data;
 	MatrixXi cluster_size;
+	VectorXi clusterRank;
 	
 	double patching_threshold;
-	MatrixXd patch1, patch2;
+	double patch_count;
+	MatrixXd patch1, patch2, clsuter_2_patch;
 	VectorXi patch_size, patch_rank;
+	VectorXi patch_in_cluster_num, patch_2_clutser;
 
 	// Matlab instance
 	Engine* engine;
